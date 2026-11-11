@@ -61,7 +61,7 @@
 
   <div id="v-login" class="box center">
     <h1>🚀 數學國小 1–6 全年級　數學英雄傳</h1>
-    <p class="hint">輸入資料後開始闖關。你的成績只存在這台電腦的瀏覽器裡，不會上傳。</p>
+    <p class="hint">輸入資料後開始闖關。成績會記錄給老師，也會保存在這台電腦的瀏覽器裡。</p>
     <div class="row"><input type="text" id="p-name" placeholder="輸入英雄姓名" autocomplete="off"></div>
     <div class="row">
       <select id="p-class">
@@ -112,7 +112,7 @@
   <div id="v-records" class="box hidden">
     <div class="topbar"><h2 style="margin:0">我的成績紀錄</h2><button class="linkbtn" id="btn-rec-back">↩️ 回地圖</button></div>
     <div id="rec-body"></div>
-    <p class="note">紀錄只保存在這個瀏覽器；清除瀏覽器資料就會消失。</p>
+    <p class="note">這裡的紀錄只保存在這個瀏覽器；老師端另有完整紀錄。</p>
     <button id="btn-rec-clear" class="linkbtn">清除所有紀錄</button>
   </div>
 </div>
@@ -122,6 +122,8 @@
 <script>
 (function () {
   "use strict";
+  // 成績回傳到老師的 Google 試算表（Apps Script 網頁應用程式）。留空字串則只存在本機。
+  const BACKEND = 'https://script.google.com/macros/s/AKfycbyc5V6jXcNlx1U8lFGwnUZMGXBylTtUilTqPza45bAY8yw5Wnia8DXkWrZwxiXodrIC5A/exec';
   const $ = id => document.getElementById(id);
   const VIEWS = ['v-login', 'v-home', 'v-quiz', 'v-result', 'v-records'];
   const GRADES = ['1上','1下','2上','2下','3上','3下','4上','4下','5上','5下','6上','6下'];
@@ -285,7 +287,7 @@
     const sec = Math.floor((Date.now() - startedAt) / 1000);
     const dur = Math.floor(sec / 60) + ' 分 ' + (sec % 60) + ' 秒';
     const per = 100 / items.length;
-    let right = 0; const wrong = []; const detail = $('r-detail'); detail.textContent = '';
+    let right = 0; const details = []; const wrong = []; const detail = $('r-detail'); detail.textContent = '';
     items.forEach((it, i) => {
       let ok, shown, correct, mis = '';
       if (it.type === '選擇') {
@@ -303,6 +305,7 @@
         correct = it.ans;
       }
       if (ok) right++; else wrong.push(it);
+      details.push({ no: i + 1, type: it.type, q: it.q, ua: shown, ca: correct, ok: ok ? 1 : 0, concept: it.concept, misc: mis });
       const rv = el('div', { class: 'rv ' + (ok ? 'ok' : 'no') },
         el('b', null, (ok ? '✅ 正確' : '❌ 錯誤') + '　第 ' + (i + 1) + ' 題'), el('span', { class: 'tag' }, it.concept ? '　概念：' + it.concept : ''),
         el('div', null, it.q));
@@ -323,8 +326,20 @@
     $('btn-retry-wrong').classList.toggle('hidden', wrong.length === 0);
     lastRun = { wrong };
     // 完整單元的第一次作答才寫入成績紀錄（錯題重做不覆蓋最高分）
+    if (!isRetry) sendLog({ action: 'log', name: player.name, cls: player.cls, seat: player.seat, grade: grade, unit: unit.unit + (isHard ? '（難題）' : ''), hard: isHard ? 1 : 0, score: score, duration: dur, seconds: sec, details: details });
     if (!isRetry) saveRecord({ t: Date.now(), g: grade, u: unit.unit, h: isHard ? 1 : 0, s: score, r: right, n: items.length, d: dur, wk: ks });
     show('v-result');
+  }
+  function sendLog(payload) {
+    if (!BACKEND) return;
+    try {
+      fetch(BACKEND, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload), keepalive: true })
+        .catch(() => { const q = store.get('mh_unsent', []); q.push(payload); store.set('mh_unsent', q.slice(-50)); });
+    } catch (e) { /* 離線或被擋：忽略，成績仍存在本機 */ }
+  }
+  function flushUnsent() {
+    const q = store.get('mh_unsent', []); if (!q.length || !BACKEND) return;
+    store.set('mh_unsent', []); q.forEach(sendLog);
   }
   function saveRecord(r) {
     const arr = store.get('mh_records', []); arr.push(r);
@@ -367,6 +382,7 @@
   $('btn-rec-clear').onclick = () => { if (confirm('確定清除所有成績紀錄？')) { store.set('mh_records', []); showRecords(); } };
   $('btn-logout').onclick = () => { store.set('mh_player', null); player = null; show('v-login'); };
 
+  flushUnsent();
   if (player) { $('p-name').value = player.name; $('p-class').value = player.cls; $('p-seat').value = player.seat; goHome(); }
   else show('v-login');
 })();
