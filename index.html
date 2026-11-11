@@ -23,7 +23,12 @@
   button.pri:hover { background:var(--gd); }
   button.full { width:100%; }
   .units { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:12px; }
-  .units button { border-radius:14px; padding:14px 10px; text-align:center; }
+  .units .cell { display:flex; flex-direction:column; gap:6px; }
+  .units .cell > button:first-child { flex:1; }
+  .units button { border-radius:14px; padding:12px 10px; text-align:center; }
+  .units button.hardbtn { border-color:#c0392b; color:#c0392b; padding:8px 10px; font-size:1rem; }
+  .units button.hardbtn:hover { background:#fdecea; }
+  .badge.hard { background:#c0392b; }
   .units small { display:block; color:var(--mut); font-size:.85rem; }
   .sticky { position:sticky; top:0; z-index:5; background:var(--bg); padding:10px 0 6px; }
   .track { height:16px; background:#e6ecef; border-radius:10px; position:relative; margin:6px 0 10px; }
@@ -113,6 +118,7 @@
 </div>
 
 <script src="questions.js"></script>
+<script src="hard.js"></script>
 <script>
 (function () {
   "use strict";
@@ -130,7 +136,7 @@
   };
 
   let player = store.get('mh_player', null);
-  let isRetry = false, grade = '', unit = null, items = [], startedAt = 0, lastRun = null;
+  let isHard = false, isRetry = false, grade = '', unit = null, items = [], startedAt = 0, lastRun = null;
 
   function show(id) { VIEWS.forEach(v => $(v).classList.toggle('hidden', v !== id)); window.scrollTo(0, 0); }
 
@@ -159,17 +165,24 @@
     $('unit-area').classList.add('hidden');
     show('v-home');
   }
-  function best(g, u) {
+  function best(g, u, hard) {
     let b = null;
-    store.get('mh_records', []).forEach(r => { if (r.g === g && r.u === u && (b === null || r.s > b)) b = r.s; });
+    store.get('mh_records', []).forEach(r => { if (r.g === g && r.u === u && !!r.h === !!hard && (b === null || r.s > b)) b = r.s; });
     return b;
   }
   function loadUnits() {
     grade = $('s-grade').value;
     const box = $('units'); box.textContent = '';
-    (window.QB[grade] || []).forEach(u => {
-      const b = best(grade, u.unit);
-      box.append(el('button', { onclick: () => startUnit(u) }, u.unit, el('small', null, b === null ? '尚未挑戰' : '最高 ' + b + ' 分')));
+    (window.QB[grade] || []).forEach((u, i) => {
+      const b = best(grade, u.unit, false);
+      const cell = el('div', { class: 'cell' },
+        el('button', { onclick: () => startUnit(u, false) }, u.unit, el('small', null, b === null ? '尚未挑戰' : '最高 ' + b + ' 分')));
+      const hu = window.HQB && window.HQB[grade] && window.HQB[grade][i];
+      if (hu) {
+        const hb = best(grade, u.unit, true);
+        cell.append(el('button', { class: 'hardbtn', onclick: () => startUnit(hu, true) }, '🔥 難題測驗', el('small', null, hb === null ? '尚未挑戰' : '最高 ' + hb + ' 分')));
+      }
+      box.append(cell);
     });
     $('unit-area').classList.remove('hidden');
   }
@@ -201,15 +214,15 @@
     }
     return it;
   }
-  function startUnit(u) {
-    unit = u; isRetry = false;
+  function startUnit(u, hard) {
+    unit = u; isRetry = false; isHard = !!hard;
     items = u.qs.map(mkItem);
     renderQuiz();
   }
 
   function renderQuiz() {
     $('u-title').textContent = '';
-    $('u-title').append(el('span', { class: 'badge' }, grade), unit.unit);
+    $('u-title').append(el('span', { class: 'badge' }, grade), isHard ? el('span', { class: 'badge hard' }, '難題') : '', unit.unit);
     const list = $('q-list'); list.textContent = '';
     items.forEach((it, i) => {
       const card = el('div', { class: 'q' }, el('h4', null, '第 ' + (i + 1) + ' 題　[' + it.type + ']'), el('div', { class: 'qt' }, it.q));
@@ -310,7 +323,7 @@
     $('btn-retry-wrong').classList.toggle('hidden', wrong.length === 0);
     lastRun = { wrong };
     // 完整單元的第一次作答才寫入成績紀錄（錯題重做不覆蓋最高分）
-    if (!isRetry) saveRecord({ t: Date.now(), g: grade, u: unit.unit, s: score, r: right, n: items.length, d: dur, wk: ks });
+    if (!isRetry) saveRecord({ t: Date.now(), g: grade, u: unit.unit, h: isHard ? 1 : 0, s: score, r: right, n: items.length, d: dur, wk: ks });
     show('v-result');
   }
   function saveRecord(r) {
@@ -323,7 +336,7 @@
     isRetry = true;
     renderQuiz();
   }
-  function retryAll() { startUnit(unit); }
+  function retryAll() { startUnit(unit, isHard); }
 
   // ---------- 成績紀錄 ----------
   function showRecords() {
@@ -333,7 +346,7 @@
     const t = el('table', null, el('tr', null, ...['時間', '年級', '單元', '分數', '答對', '用時'].map(h => el('th', null, h))));
     rs.forEach(r => {
       const d = new Date(r.t);
-      t.append(el('tr', null, ...[d.getMonth() + 1 + '/' + d.getDate() + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'), r.g, r.u, r.s + ' 分', r.r + '/' + r.n, r.d].map(x => el('td', null, x))));
+      t.append(el('tr', null, ...[d.getMonth() + 1 + '/' + d.getDate() + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'), r.g, r.u + (r.h ? '（難題）' : ''), r.s + ' 分', r.r + '/' + r.n, r.d].map(x => el('td', null, x))));
     });
     body.append(t); show('v-records');
   }
