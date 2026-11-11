@@ -53,6 +53,9 @@
   th,td { padding:8px 10px; border-bottom:1px solid #e3e8e5; text-align:left; font-size:.98rem; }
   .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; color:var(--mut); }
   .linkbtn { border:none; background:none; color:var(--gd); text-decoration:underline; padding:4px 8px; font-size:1rem; }
+  .roster { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-top:6px; }
+  .roster button { text-align:left; padding:12px 18px; border-radius:14px; }
+  .roster b { display:inline-block; min-width:3.2em; color:var(--mut); font-weight:600; }
   .note { color:var(--mut); font-size:.9rem; margin-top:14px; }
 </style>
 </head>
@@ -61,17 +64,13 @@
 
   <div id="v-login" class="box center">
     <h1>🚀 數學國小 1–6 全年級　數學英雄傳</h1>
-    <p class="hint">輸入資料後開始闖關。成績會記錄給老師，也會保存在這台電腦的瀏覽器裡。</p>
-    <div class="row"><input type="text" id="p-name" placeholder="輸入英雄姓名" autocomplete="off"></div>
+    <p class="hint">先選班級，再點選自己的座號和姓名開始闖關。成績會記錄給老師，也會保存在這台電腦的瀏覽器裡。</p>
     <div class="row">
       <select id="p-class">
         <option value="" disabled selected>選擇班級</option>
-        <option>一甲</option><option>二甲</option><option>三甲</option>
-        <option>四甲</option><option>五甲</option><option>六甲</option>
       </select>
-      <input type="number" id="p-seat" placeholder="座號" min="1" max="60">
     </div>
-    <button class="pri full" id="btn-login">進入冒險地圖</button>
+    <div id="roster" class="roster hidden"></div>
   </div>
 
   <div id="v-home" class="box hidden">
@@ -119,6 +118,7 @@
 
 <script src="questions.js"></script>
 <script src="hard.js"></script>
+<script src="roster.js"></script>
 <script>
 (function () {
   "use strict";
@@ -154,10 +154,16 @@
   }
 
   // ---------- 登入 / 首頁 ----------
-  function login() {
-    const name = $('p-name').value.trim(), cls = $('p-class').value, seat = $('p-seat').value.trim();
-    if (!name || !cls || !seat) { alert('請填寫姓名、班級與座號！'); return; }
-    player = { name, cls, seat };
+  function renderRoster() {
+    const cls = $('p-class').value, box = $('roster'); box.textContent = '';
+    const list = (window.ROSTER && window.ROSTER[cls]) || [];
+    list.forEach(([seat, name]) => {
+      box.append(el('button', { onclick: () => login(cls, seat, name) }, el('b', null, seat + ' 號'), name));
+    });
+    box.classList.toggle('hidden', !list.length);
+  }
+  function login(cls, seat, name) {
+    player = { name, cls, seat: String(seat) };
     store.set('mh_player', player);
     goHome();
   }
@@ -369,8 +375,8 @@
   // ---------- 事件 ----------
   GRADES.forEach(g => $('s-grade').append(el('option', { value: g }, gname(g))));
   $('s-grade').insertBefore(el('option', { value: '', disabled: 'disabled', selected: 'selected' }, '請選擇年級…'), $('s-grade').firstChild);
-  $('btn-login').onclick = login;
-  $('p-seat').onkeydown = e => { if (e.key === 'Enter') login(); };
+  Object.keys(window.ROSTER || {}).forEach(c => $('p-class').append(el('option', { value: c }, c)));
+  $('p-class').onchange = renderRoster;
   $('s-grade').onchange = loadUnits;
   $('btn-submit').onclick = submit;
   $('btn-back1').onclick = () => { if (confirm('離開會放棄目前作答，確定嗎？')) goHome(); };
@@ -380,11 +386,11 @@
   $('btn-records').onclick = showRecords;
   $('btn-rec-back').onclick = goHome;
   $('btn-rec-clear').onclick = () => { if (confirm('確定清除所有成績紀錄？')) { store.set('mh_records', []); showRecords(); } };
-  $('btn-logout').onclick = () => { store.set('mh_player', null); player = null; show('v-login'); };
+  $('btn-logout').onclick = () => { store.set('mh_player', null); player = null; $('p-class').selectedIndex = 0; $('roster').classList.add('hidden'); show('v-login'); };
 
   flushUnsent();
-  if (player) { $('p-name').value = player.name; $('p-class').value = player.cls; $('p-seat').value = player.seat; goHome(); }
-  else show('v-login');
+  const valid = player && ((window.ROSTER || {})[player.cls] || []).some(r => String(r[0]) === String(player.seat) && r[1] === player.name);
+  if (valid) goHome(); else { player = null; store.set('mh_player', null); show('v-login'); }
 })();
 </script>
 </body>
