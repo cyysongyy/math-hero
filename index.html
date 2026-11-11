@@ -332,7 +332,7 @@
     $('btn-retry-wrong').classList.toggle('hidden', wrong.length === 0);
     lastRun = { wrong };
     // 完整單元的第一次作答才寫入成績紀錄（錯題重做不覆蓋最高分）
-    if (!isRetry) sendLog({ action: 'log', name: player.name, cls: player.cls, seat: player.seat, grade: grade, unit: unit.unit + (isHard ? '（難題）' : ''), hard: isHard ? 1 : 0, score: score, duration: dur, seconds: sec, details: details });
+    if (!isRetry) sendLog({ action: 'log', name: player.name, cls: player.cls, seat: player.seat, grade: grade, unit: unit.unit + (isHard ? '（難題）' : ''), hard: isHard ? 1 : 0, score: score, right: right, total: items.length, duration: dur, seconds: sec });
     if (!isRetry) saveRecord({ t: Date.now(), p: pid(), g: grade, u: unit.unit, h: isHard ? 1 : 0, s: score, r: right, n: items.length, d: dur, wk: ks });
     show('v-result');
   }
