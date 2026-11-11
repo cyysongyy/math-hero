@@ -124,6 +124,23 @@
   "use strict";
   // 成績回傳到老師的 Google 試算表（Apps Script 網頁應用程式）。留空字串則只存在本機。
   const BACKEND = 'https://script.google.com/macros/s/AKfycbz6-jx-OEZqJEn6hveqlfZILhd3mhcSrEFqv_19W2SMwGSLN_HVnt8FMzZvMTytvqMUEw/exec';
+  // 每個瀏覽器分頁一個工作階段代號：同一分頁重新整理後再登入視為同一人；另一台電腦／另一個視窗則是不同代號
+  const SID = (function () {
+    try {
+      let v = sessionStorage.getItem('mh_sid');
+      if (!v) { v = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now(); sessionStorage.setItem('mh_sid', v); }
+      return v;
+    } catch (e) { return String(Math.random()).slice(2) + Date.now(); }
+  })();
+  // 呼叫後端並讀取回應；網路失敗回傳空字串
+  async function call(body, timeoutMs) {
+    if (!BACKEND) return '';
+    const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), timeoutMs || 8000);
+    try {
+      const r = await fetch(BACKEND, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ sid: SID }, body)), signal: ctl.signal });
+      return (await r.text()).trim();
+    } catch (e) { return ''; } finally { clearTimeout(tm); }
+  }
   const $ = id => document.getElementById(id);
   const VIEWS = ['v-login', 'v-home', 'v-quiz', 'v-result', 'v-records'];
   const GRADES = ['1上','1下','2上','2下','3上','3下','4上','4下','5上','5下','6上','6下'];
@@ -163,10 +180,38 @@
     });
     box.classList.toggle('hidden', !list.length);
   }
-  function login(cls, seat, name) {
+  let beatTimer = null;
+  function startBeat() {
+    stopBeat();
+    beatTimer = setInterval(async () => {
+      if (!player) return;
+      const res = await call({ action: 'beat', cls: player.cls, seat: player.seat, name: player.name });
+      if (res === 'taken') { forceLogout('這位學生已在另一個視窗或另一台電腦登入，這裡已被登出。同一個姓名不能同時登入。'); }
+    }, 45000);
+  }
+  function stopBeat() { if (beatTimer) { clearInterval(beatTimer); beatTimer = null; } }
+  function forceLogout(msg) {
+    stopBeat(); player = null;
+    $('p-class').selectedIndex = 0; $('roster').classList.add('hidden'); show('v-login');
+    alert(msg);
+  }
+  async function login(cls, seat, name) {
+    const btns = document.querySelectorAll('#roster button'); btns.forEach(b => b.disabled = true);
+    const res = await call({ action: 'login', cls, seat: String(seat), name });
+    btns.forEach(b => b.disabled = false);
+    if (res === 'busy') {
+      alert('這位學生（' + cls + ' ' + seat + ' 號 ' + name + '）目前已在另一個視窗或另一台電腦登入。同一個姓名不能同時登入。如果是你自己，請先關掉另一個視窗，或等 2 分鐘後再試。');
+      return;
+    }
     player = { name, cls, seat: String(seat) };
+    startBeat();
     goHome();
   }
+  function leave() {
+    if (!player) return;
+    try { navigator.sendBeacon(BACKEND, JSON.stringify({ action: 'bye', sid: SID, cls: player.cls, seat: player.seat })); } catch (e) { /* 忽略 */ }
+  }
+  window.addEventListener('pagehide', leave);
   function goHome() {
     $('who').textContent = '👤 ' + player.cls + ' ' + player.seat + ' 號　' + player.name;
     $('s-grade').selectedIndex = 0;
@@ -332,16 +377,23 @@
     $('btn-retry-wrong').classList.toggle('hidden', wrong.length === 0);
     lastRun = { wrong };
     // 完整單元的第一次作答才寫入成績紀錄（錯題重做不覆蓋最高分）
-    if (!isRetry) sendLog({ action: 'log', name: player.name, cls: player.cls, seat: player.seat, grade: grade, unit: unit.unit + (isHard ? '（難題）' : ''), hard: isHard ? 1 : 0, score: score, right: right, total: items.length, duration: dur, seconds: sec });
-    if (!isRetry) saveRecord({ t: Date.now(), p: pid(), g: grade, u: unit.unit, h: isHard ? 1 : 0, s: score, r: right, n: items.length, d: dur, wk: ks });
+    const NOW = Date.now();
+    if (!isRetry) sendLog({ action: 'log', name: player.name, cls: player.cls, seat: player.seat, grade: grade, unit: unit.unit + (isHard ? '（難題）' : ''), hard: isHard ? 1 : 0, score: score, right: right, total: items.length, duration: dur, seconds: sec, t: NOW });
+    if (!isRetry) saveRecord({ t: NOW, p: pid(), g: grade, u: unit.unit, h: isHard ? 1 : 0, s: score, r: right, n: items.length, d: dur, wk: ks });
     show('v-result');
   }
-  function sendLog(payload) {
+  async function sendLog(payload) {
     if (!BACKEND) return;
-    try {
-      fetch(BACKEND, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload), keepalive: true })
-        .catch(() => { const q = store.get('mh_unsent', []); q.push(payload); store.set('mh_unsent', q.slice(-50)); });
-    } catch (e) { /* 離線或被擋：忽略，成績仍存在本機 */ }
+    const res = await call(payload, 15000);
+    if (res !== 'ok' && res !== 'invalid') {   // 網路失敗、或後端暫時壞掉：先暫存，下次開啟網頁時補送
+      const q = store.get('mh_unsent', []); q.push(payload); store.set('mh_unsent', q.slice(-50)); return;
+    }
+    if (res === 'invalid') {
+      const arr = store.get('mh_records', []);          // 這次成績不列入，連本機紀錄一起移除
+      for (let i = arr.length - 1; i >= 0; i--) { if (arr[i].t === payload.t) { arr.splice(i, 1); break; } }
+      store.set('mh_records', arr);
+      alert('偵測到同一個姓名同時在另一個視窗或電腦登入，這次成績不列入紀錄。');
+    }
   }
   function flushUnsent() {
     const q = store.get('mh_unsent', []); if (!q.length || !BACKEND) return;
@@ -386,7 +438,7 @@
   $('btn-records').onclick = showRecords;
   $('btn-rec-back').onclick = goHome;
   $('btn-rec-clear').onclick = () => { if (confirm('確定清除所有成績紀錄？')) { store.set('mh_records', []); showRecords(); } };
-  $('btn-logout').onclick = () => { player = null; $('p-class').selectedIndex = 0; $('roster').classList.add('hidden'); show('v-login'); };
+  $('btn-logout').onclick = () => { leave(); stopBeat(); player = null; $('p-class').selectedIndex = 0; $('roster').classList.add('hidden'); show('v-login'); };
 
   flushUnsent();
   show('v-login');
