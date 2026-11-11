@@ -64,7 +64,7 @@
 
   <div id="v-login" class="box center">
     <h1>🚀 數學國小 1–6 全年級　數學英雄傳</h1>
-    <p class="hint">先選班級，再點選自己的座號和姓名開始闖關。成績會記錄給老師，也會保存在這台電腦的瀏覽器裡。</p>
+    <p class="hint">先選班級，再點選自己的座號和姓名開始闖關。成績會記錄給老師。每次開啟都需要重新選擇。</p>
     <div class="row">
       <select id="p-class">
         <option value="" disabled selected>選擇班級</option>
@@ -137,7 +137,8 @@
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { mem[k] = v; } }
   };
 
-  let player = store.get('mh_player', null);
+  let player = null; // 每次開啟都重新登入，不記住上一位學生
+  const pid = () => player ? player.cls + '|' + player.seat : '';
   let isHard = false, isRetry = false, grade = '', unit = null, items = [], startedAt = 0, lastRun = null;
 
   function show(id) { VIEWS.forEach(v => $(v).classList.toggle('hidden', v !== id)); window.scrollTo(0, 0); }
@@ -164,7 +165,6 @@
   }
   function login(cls, seat, name) {
     player = { name, cls, seat: String(seat) };
-    store.set('mh_player', player);
     goHome();
   }
   function goHome() {
@@ -175,7 +175,7 @@
   }
   function best(g, u, hard) {
     let b = null;
-    store.get('mh_records', []).forEach(r => { if (r.g === g && r.u === u && !!r.h === !!hard && (b === null || r.s > b)) b = r.s; });
+    store.get('mh_records', []).forEach(r => { if (r.p === pid() && r.g === g && r.u === u && !!r.h === !!hard && (b === null || r.s > b)) b = r.s; });
     return b;
   }
   function loadUnits() {
@@ -333,7 +333,7 @@
     lastRun = { wrong };
     // 完整單元的第一次作答才寫入成績紀錄（錯題重做不覆蓋最高分）
     if (!isRetry) sendLog({ action: 'log', name: player.name, cls: player.cls, seat: player.seat, grade: grade, unit: unit.unit + (isHard ? '（難題）' : ''), hard: isHard ? 1 : 0, score: score, duration: dur, seconds: sec, details: details });
-    if (!isRetry) saveRecord({ t: Date.now(), g: grade, u: unit.unit, h: isHard ? 1 : 0, s: score, r: right, n: items.length, d: dur, wk: ks });
+    if (!isRetry) saveRecord({ t: Date.now(), p: pid(), g: grade, u: unit.unit, h: isHard ? 1 : 0, s: score, r: right, n: items.length, d: dur, wk: ks });
     show('v-result');
   }
   function sendLog(payload) {
@@ -362,7 +362,7 @@
   // ---------- 成績紀錄 ----------
   function showRecords() {
     const body = $('rec-body'); body.textContent = '';
-    const rs = store.get('mh_records', []).slice().reverse();
+    const rs = store.get('mh_records', []).filter(r => r.p === pid()).reverse();
     if (!rs.length) { body.append(el('p', null, '還沒有紀錄，快去挑戰吧！')); show('v-records'); return; }
     const t = el('table', null, el('tr', null, ...['時間', '年級', '單元', '分數', '答對', '用時'].map(h => el('th', null, h))));
     rs.forEach(r => {
@@ -386,11 +386,10 @@
   $('btn-records').onclick = showRecords;
   $('btn-rec-back').onclick = goHome;
   $('btn-rec-clear').onclick = () => { if (confirm('確定清除所有成績紀錄？')) { store.set('mh_records', []); showRecords(); } };
-  $('btn-logout').onclick = () => { store.set('mh_player', null); player = null; $('p-class').selectedIndex = 0; $('roster').classList.add('hidden'); show('v-login'); };
+  $('btn-logout').onclick = () => { player = null; $('p-class').selectedIndex = 0; $('roster').classList.add('hidden'); show('v-login'); };
 
   flushUnsent();
-  const valid = player && ((window.ROSTER || {})[player.cls] || []).some(r => String(r[0]) === String(player.seat) && r[1] === player.name);
-  if (valid) goHome(); else { player = null; store.set('mh_player', null); show('v-login'); }
+  show('v-login');
 })();
 </script>
 </body>
