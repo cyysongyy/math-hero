@@ -56,6 +56,11 @@
   .roster { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-top:6px; }
   .roster button { text-align:left; padding:12px 18px; border-radius:14px; }
   .roster b { display:inline-block; min-width:3.2em; color:var(--mut); font-weight:600; }
+  .qr-box { display:inline-block; margin:4px 0 18px; }
+  .qr-box img { display:block; margin:0 auto; border:3px solid #14397a; border-radius:14px; padding:6px; background:#fff; box-shadow:0 4px 15px rgba(20,57,122,.15); }
+  .qr-label { font-size:.9rem; color:#14397a; font-weight:600; margin-top:6px; }
+  .qr-url { font-size:.8rem; color:var(--mut); word-break:break-all; }
+  @media print { .qr-box img { width:260px; height:260px; } }
   .note { color:var(--mut); font-size:.9rem; margin-top:14px; }
 </style>
 </head>
@@ -65,6 +70,11 @@
   <div id="v-login" class="box center">
     <h1>🚀 數學國小 1–6 全年級　數學英雄傳</h1>
     <p class="hint">先選班級，再點選自己的座號和姓名開始闖關。成績會記錄給老師。每次開啟都需要重新選擇。</p>
+    <div class="qr-box">
+      <img src="qr.svg" alt="掃描 QR Code 進入數學英雄傳" width="150" height="150">
+      <div class="qr-label">📱 掃描 QR Code 快速進入</div>
+      <div class="qr-url" id="qr-url"></div>
+    </div>
     <div class="row">
       <select id="p-class">
         <option value="" disabled selected>選擇班級</option>
@@ -440,6 +450,7 @@
   $('btn-rec-clear').onclick = () => { if (confirm('確定清除所有成績紀錄？')) { store.set('mh_records', []); showRecords(); } };
   $('btn-logout').onclick = () => { leave(); stopBeat(); player = null; $('p-class').selectedIndex = 0; $('roster').classList.add('hidden'); show('v-login'); };
 
+  $('qr-url').textContent = 'https://cyysongyy.github.io/math-hero/';
   flushUnsent();
   show('v-login');
 })();
