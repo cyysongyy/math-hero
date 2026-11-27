@@ -124,7 +124,13 @@
 
   <div id="v-settings" class="box hidden">
     <div class="topbar"><h2 style="margin:0">⚙ 設定（老師用）</h2><button class="linkbtn" id="btn-set-back">↩️ 回登入畫面</button></div>
-    <p class="hint">一鍵清除所有舊的分數紀錄（試算表裡的成績與異常紀錄）。清除前系統會先自動備份一份，清除後「學生名單」的統計會歸零。</p>
+    <p class="hint">一鍵清除舊的分數紀錄（試算表裡的成績與異常紀錄）。可以選全部年級，或只清某一個年級。清除前系統會先自動備份一份，清除後「學生名單」對應的統計會歸零。</p>
+    <select id="s-scope" style="max-width:260px;margin-bottom:10px">
+      <option value="all">全部年級</option>
+      <option value="一甲">一年級（一甲）</option><option value="二甲">二年級（二甲）</option>
+      <option value="三甲">三年級（三甲）</option><option value="四甲">四年級（四甲）</option>
+      <option value="五甲">五年級（五甲）</option><option value="六甲">六年級（六甲）</option>
+    </select><br>
     <input type="password" id="s-pw" placeholder="輸入密碼" autocomplete="off" inputmode="numeric" style="max-width:260px">
     <div style="margin-top:14px"><button class="danger" id="btn-clear">🗑 一鍵清除舊分數紀錄</button></div>
     <p id="s-msg" class="hint" style="margin-top:12px"></p>
@@ -464,13 +470,18 @@
   $('btn-clear').onclick = async () => {
     const pw = $('s-pw').value.trim(), msg = $('s-msg');
     if (!pw) { msg.textContent = '請先輸入密碼。'; return; }
-    if (!confirm('確定要清除所有舊分數紀錄嗎？系統會先自動備份一份，但「學生名單」的統計會歸零。')) return;
+    const scope = $('s-scope').value, label = $('s-scope').options[$('s-scope').selectedIndex].text;
+    if (!confirm('確定要清除「' + label + '」的舊分數紀錄嗎？系統會先自動備份一份，但「學生名單」對應的統計會歸零。')) return;
     $('btn-clear').disabled = true; msg.textContent = '處理中，請稍候…';
-    const res = await call({ action: 'clear', pw: pw }, 25000);
+    const res = await call({ action: 'clear', pw: pw, cls: scope }, 25000);
     $('btn-clear').disabled = false;
     if (res.indexOf('ok:') === 0) {
-      store.set('mh_records', []); store.set('mh_unsent', []);
-      msg.textContent = '✅ 已清除 ' + res.slice(3) + ' 筆舊分數紀錄（已自動備份）。這台電腦上的本機紀錄也一併清除。';
+      if (scope === 'all') { store.set('mh_records', []); store.set('mh_unsent', []); }
+      else {
+        store.set('mh_records', store.get('mh_records', []).filter(r => String(r.p || '').indexOf(scope + '|') !== 0));
+        store.set('mh_unsent', store.get('mh_unsent', []).filter(x => x.cls !== scope));
+      }
+      msg.textContent = '✅ 已清除「' + label + '」' + res.slice(3) + ' 筆舊分數紀錄（已自動備份）。這台電腦上對應的本機紀錄也一併清除。';
       $('s-pw').value = '';
     } else if (res === 'denied') { msg.textContent = '❌ 密碼錯誤。'; }
     else if (res === 'locked') { msg.textContent = '⛔ 錯誤次數過多，已暫時鎖定，請 10 分鐘後再試。'; }
