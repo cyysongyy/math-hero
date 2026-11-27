@@ -61,6 +61,9 @@
   .qr-label { font-size:.9rem; color:#14397a; font-weight:600; margin-top:6px; }
   .qr-url { font-size:.8rem; color:var(--mut); word-break:break-all; }
   @media print { .qr-box img { width:260px; height:260px; } }
+  button.danger { border-color:#c0392b; color:#c0392b; }
+  button.danger:hover { background:#fdecea; }
+  button:disabled { opacity:.5; cursor:wait; }
   .note { color:var(--mut); font-size:.9rem; margin-top:14px; }
 </style>
 </head>
@@ -81,6 +84,7 @@
       </select>
     </div>
     <div id="roster" class="roster hidden"></div>
+    <div style="margin-top:16px"><button class="linkbtn" id="btn-settings">⚙ 設定</button></div>
   </div>
 
   <div id="v-home" class="box hidden">
@@ -118,6 +122,14 @@
     </div>
   </div>
 
+  <div id="v-settings" class="box hidden">
+    <div class="topbar"><h2 style="margin:0">⚙ 設定（老師用）</h2><button class="linkbtn" id="btn-set-back">↩️ 回登入畫面</button></div>
+    <p class="hint">一鍵清除所有舊的分數紀錄（試算表裡的成績與異常紀錄）。清除前系統會先自動備份一份，清除後「學生名單」的統計會歸零。</p>
+    <input type="password" id="s-pw" placeholder="輸入密碼" autocomplete="off" inputmode="numeric" style="max-width:260px">
+    <div style="margin-top:14px"><button class="danger" id="btn-clear">🗑 一鍵清除舊分數紀錄</button></div>
+    <p id="s-msg" class="hint" style="margin-top:12px"></p>
+  </div>
+
   <div id="v-records" class="box hidden">
     <div class="topbar"><h2 style="margin:0">我的成績紀錄</h2><button class="linkbtn" id="btn-rec-back">↩️ 回地圖</button></div>
     <div id="rec-body"></div>
@@ -152,7 +164,7 @@
     } catch (e) { return ''; } finally { clearTimeout(tm); }
   }
   const $ = id => document.getElementById(id);
-  const VIEWS = ['v-login', 'v-home', 'v-quiz', 'v-result', 'v-records'];
+  const VIEWS = ['v-login', 'v-home', 'v-quiz', 'v-result', 'v-records', 'v-settings'];
   const GRADES = ['1上','1下','2上','2下','3上','3下','4上','4下','5上','5下','6上','6下'];
   const CN = ['一','二','三','四','五','六'];
   const gname = g => CN[+g[0]-1] + '年級' + (g[1] === '上' ? '上學期' : '下學期');
@@ -447,6 +459,24 @@
   $('btn-retry-all').onclick = retryAll;
   $('btn-records').onclick = showRecords;
   $('btn-rec-back').onclick = goHome;
+  $('btn-settings').onclick = () => { $('s-pw').value = ''; $('s-msg').textContent = ''; show('v-settings'); };
+  $('btn-set-back').onclick = () => show('v-login');
+  $('btn-clear').onclick = async () => {
+    const pw = $('s-pw').value.trim(), msg = $('s-msg');
+    if (!pw) { msg.textContent = '請先輸入密碼。'; return; }
+    if (!confirm('確定要清除所有舊分數紀錄嗎？系統會先自動備份一份，但「學生名單」的統計會歸零。')) return;
+    $('btn-clear').disabled = true; msg.textContent = '處理中，請稍候…';
+    const res = await call({ action: 'clear', pw: pw }, 25000);
+    $('btn-clear').disabled = false;
+    if (res.indexOf('ok:') === 0) {
+      store.set('mh_records', []); store.set('mh_unsent', []);
+      msg.textContent = '✅ 已清除 ' + res.slice(3) + ' 筆舊分數紀錄（已自動備份）。這台電腦上的本機紀錄也一併清除。';
+      $('s-pw').value = '';
+    } else if (res === 'denied') { msg.textContent = '❌ 密碼錯誤。'; }
+    else if (res === 'locked') { msg.textContent = '⛔ 錯誤次數過多，已暫時鎖定，請 10 分鐘後再試。'; }
+    else if (res === '') { msg.textContent = '⚠ 連不上後端，請檢查網路後再試。'; }
+    else { msg.textContent = '⚠ 後端尚未更新到有「清除」功能的版本（回應：' + res.slice(0, 30) + '）。'; }
+  };
   $('btn-rec-clear').onclick = () => { if (confirm('確定清除所有成績紀錄？')) { store.set('mh_records', []); showRecords(); } };
   $('btn-logout').onclick = () => { leave(); stopBeat(); player = null; $('p-class').selectedIndex = 0; $('roster').classList.add('hidden'); show('v-login'); };
 
